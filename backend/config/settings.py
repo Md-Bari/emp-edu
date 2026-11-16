@@ -217,8 +217,7 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 MEDIA_ROOT = Path(os.environ.get('MEDIA_ROOT', BASE_DIR / 'media'))
 
 # First-seen expression snapshots: the first time a consenting student shows each expression in a
-# session, the classified face crop is saved to
-#   MEDIA_ROOT/expression_snapshots/session_<id>/<expression>/<username>.jpg
+# session, the classified face crop is saved in the database (analytics.ExpressionSnapshot.image)
 EXPRESSION_SNAPSHOTS_ENABLED = os.environ.get('EXPRESSION_SNAPSHOTS_ENABLED', 'True') == 'True'
 # Ignore low-confidence predictions so a misread cannot take a student's only slot for that class
 EXPRESSION_SNAPSHOT_MIN_CONFIDENCE = float(os.environ.get('EXPRESSION_SNAPSHOT_MIN_CONFIDENCE', '0.5'))

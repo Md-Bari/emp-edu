@@ -25,8 +25,9 @@ An AI-powered e-learning platform providing live emotional, attentional, and eng
    - **Privacy**: No video is stored. The instructor's tile shows a small live preview (192x144 JPEG) relayed in
      memory to that session's instructors only.
    - **Expression photos**: the first time a consenting student shows each expression in a session (prediction
-     confidence >= 50%), the classified face crop is saved once - at most six photos per student per session:
-     `backend/media/expression_snapshots/session_<id>/<expression>/<username>.jpg`. Screen-capture faces are never
+     confidence >= 50%), the classified face crop is saved once - at most six photos per student per session.
+     The JPEG is stored in the database (`ExpressionSnapshot.image`), so removing a photo removes the image too.
+     The instructor's gallery updates live (`photo.new` / `photo.removed`). Screen-capture faces are never
      saved. Withdrawing consent deletes the student's photos. Students are told on the consent screen.
      Settings: `EXPRESSION_SNAPSHOTS_ENABLED` (default `True`), `EXPRESSION_SNAPSHOT_MIN_CONFIDENCE` (default `0.5`).
 3. **Smoothing & Aggregation**:
@@ -38,6 +39,7 @@ An AI-powered e-learning platform providing live emotional, attentional, and eng
      - `session.snapshot`: class percentages, distribution counts, concentration curve.
      - `suggestion.new`: pedagogical AI teaching interventions.
      - `presence`: online/offline status.
+     - `photo.new` / `photo.removed`: an expression photo was stored or deleted.
      - `model.status`: AI model heartbeat & latency (ms).
 
 ---

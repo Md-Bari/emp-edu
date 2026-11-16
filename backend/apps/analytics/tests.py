@@ -420,30 +420,53 @@ class ExpressionSnapshotTestCase(ConsumerTestCase):
                 await asyncio.sleep(0.45)  # server accepts ~2.5 frames/s per student
         return comm
 
-    async def test_each_expression_is_stored_once_in_its_class_folder(self):
-        import os
+    async def test_each_expression_is_stored_once_in_the_database(self):
         from apps.analytics.models import ExpressionSnapshot
         comm = await self.stream([('happy', 0.9), ('happy', 0.95), ('sad', 0.8), ('angry', 0.3)])
         rows = [r async for r in ExpressionSnapshot.objects.filter(student=self.student).order_by('emotion')]
         self.assertEqual([r.emotion for r in rows], ['happy', 'sad'])  # 2nd happy skipped, weak angry ignored
         self.assertEqual(rows[0].confidence, 0.9)  # the first sighting is kept
         for row in rows:
-            self.assertEqual(row.image, f'expression_snapshots/session_{self.session.id}/{row.emotion}/stu.jpg')
-            with open(os.path.join(self.media, row.image), 'rb') as fh:
-                self.assertEqual(fh.read(2), b'\xff\xd8')  # JPEG
+            self.assertEqual(bytes(row.image)[:2], b'\xff\xd8')  # the JPEG itself is in the row
         await comm.disconnect()
 
     async def test_revoking_consent_deletes_photos(self):
-        import os
         from apps.analytics.models import ExpressionSnapshot
         comm = await self.stream([('neutral', 0.9)])
-        row = await ExpressionSnapshot.objects.aget(student=self.student)
-        path = os.path.join(self.media, row.image)
-        self.assertTrue(os.path.exists(path))
+        self.assertTrue(await ExpressionSnapshot.objects.filter(student=self.student).aexists())
         await comm.send_to(text_data=json.dumps({'type': 'consent.revoke'}))
         await comm.receive_output(timeout=10)
         self.assertFalse(await ExpressionSnapshot.objects.filter(student=self.student).aexists())
-        self.assertFalse(os.path.exists(path))
+        await comm.disconnect()
+
+    async def test_instructors_are_told_live_when_a_photo_is_stored_and_removed(self):
+        import asyncio
+        from channels.db import database_sync_to_async
+        from channels.layers import get_channel_layer
+        from apps.analytics import snapshots
+        from apps.analytics.models import ExpressionSnapshot
+        layer = get_channel_layer()
+        watcher = await layer.new_channel()  # stands in for an instructor's dashboard socket
+        await layer.group_add(snapshots.session_group(self.session.id), watcher)
+
+        async def next_photo_event(kind):
+            while True:  # presence and telemetry share the group; skip to the photo event
+                message = await asyncio.wait_for(layer.receive(watcher), timeout=10)
+                if message['type'] == kind:
+                    return message['photo']
+
+        comm = await self.stream([('happy', 0.9)])
+        stored = await ExpressionSnapshot.objects.aget(student=self.student, emotion='happy')
+        new = await next_photo_event('broadcast_photo_new')
+        self.assertEqual((new['student_id'], new['emotion'], new['photo']['id']), (self.student.id, 'happy', stored.id))
+        self.assertEqual(new['photo']['confidence'], 90)
+        self.assertTrue(new['photo']['url'].endswith(f'/expression-snapshots/{stored.id}/image/'))
+
+        photo_id = stored.id  # the row loses its id once deleted
+        await database_sync_to_async(snapshots.remove)(stored)
+        gone = await next_photo_event('broadcast_photo_removed')
+        self.assertEqual(gone, {'id': photo_id, 'student_id': self.student.id, 'emotion': 'happy'})
+        await layer.group_discard(snapshots.session_group(self.session.id), watcher)
         await comm.disconnect()
 
     async def test_removed_photo_is_captured_again_on_the_live_connection(self):
@@ -492,7 +515,12 @@ class ExpressionPhotoGalleryTestCase(TestCase):
         image = self.client.get(row['photos']['happy']['url'])
         self.assertEqual(image.status_code, 200)
         self.assertEqual(image['Content-Type'], 'image/jpeg')
-        self.assertEqual(b''.join(image.streaming_content), b'\xff\xd8fake-jpeg')
+        self.assertEqual(image.content, b'\xff\xd8fake-jpeg')
+        self.assertEqual(image['Cache-Control'], 'private, no-cache')
+        # The browser asks again on every view and, while the photo exists, gets no body back
+        again = self.client.get(row['photos']['happy']['url'], HTTP_IF_NONE_MATCH=image['ETag'])
+        self.assertEqual(again.status_code, 304)
+        self.assertEqual(again.content, b'')
 
     def test_other_instructor_and_students_cannot_see_photos(self):
         url = f'/api/analytics/sessions/{self.session.id}/expression-snapshots/'
@@ -504,7 +532,6 @@ class ExpressionPhotoGalleryTestCase(TestCase):
         self.assertIn(self.client.get(url).status_code, (401, 403))
 
     def test_owner_removes_photo_and_it_can_be_stored_again(self):
-        import os
         from apps.analytics import snapshots
         from apps.analytics.models import ExpressionSnapshot
         snap = ExpressionSnapshot.objects.get(student=self.student, emotion='happy')
@@ -515,7 +542,9 @@ class ExpressionPhotoGalleryTestCase(TestCase):
         self.client.force_authenticate(self.owner)
         self.assertEqual(self.client.delete(url).status_code, 204)
         self.assertFalse(ExpressionSnapshot.objects.filter(id=snap.id).exists())
-        self.assertFalse(os.path.exists(os.path.join(self.media, snap.image)))
+        # The image went with the row: even a browser holding a cached copy is refused
+        cached = {'HTTP_IF_NONE_MATCH': f'"expression-snapshot-{snap.id}"'}
+        self.assertEqual(self.client.get(f'{url}image/', **cached).status_code, 404)
         self.assertEqual(self.client.delete(url).status_code, 404)
         # The slot is free again: the next clear sighting is stored
         self.assertTrue(snapshots.save_first(self.session.id, self.student, 'happy', 0.8, b'\xff\xd8new'))

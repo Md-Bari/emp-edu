@@ -1,10 +1,8 @@
 import csv
-import os
 
-from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db.models import Avg, Max, Min
-from django.http import FileResponse, HttpResponse
+from django.http import HttpResponse
 from rest_framework import views, status, permissions
 from rest_framework.response import Response
 
@@ -194,13 +192,8 @@ class ExpressionSnapshotListView(InstructorSessionMixin, views.APIView):
         if not session:
             return self.not_found()
         photos = {}
-        for snap in ExpressionSnapshot.objects.filter(session=session).select_related('student'):
-            photos.setdefault(snap.student_id, {})[snap.emotion] = {
-                'id': snap.id,
-                'confidence': round(snap.confidence * 100),
-                'created_at': snap.created_at.isoformat(),
-                'url': f'/api/analytics/sessions/{session.id}/expression-snapshots/{snap.id}/image/',
-            }
+        for snap in ExpressionSnapshot.objects.filter(session=session).defer('image'):
+            photos.setdefault(snap.student_id, {})[snap.emotion] = snapshots.photo_payload(snap)
         students = []
         for enrollment in (session.attendee_enrollments()
                            .order_by('student__first_name', 'student__username')):
@@ -230,7 +223,8 @@ class ExpressionSnapshotDetailView(InstructorSessionMixin, views.APIView):
 
     def delete(self, request, session_id, snapshot_id):
         session = self.get_session(request, session_id)
-        snap = ExpressionSnapshot.objects.filter(id=snapshot_id, session_id=session_id).first() if session else None
+        snap = (ExpressionSnapshot.objects.filter(id=snapshot_id, session_id=session_id)
+                .defer('image').select_related('student').first()) if session else None
         if not snap:
             return Response({'error': 'Photo not found'}, status=status.HTTP_404_NOT_FOUND)
         label = f'{snap.emotion} photo of {snap.student.username} in {session.title}'
@@ -244,11 +238,20 @@ class ExpressionSnapshotImageView(InstructorSessionMixin, views.APIView):
 
     def get(self, request, session_id, snapshot_id):
         session = self.get_session(request, session_id)
-        snap = ExpressionSnapshot.objects.filter(id=snapshot_id, session_id=session_id).first() if session else None
-        path = os.path.join(settings.MEDIA_ROOT, snap.image) if snap else None
-        if not path or not os.path.isfile(path):
+        photos = ExpressionSnapshot.objects.filter(id=snapshot_id, session_id=session_id) if session else None
+        if photos is None or not photos.exists():
             return self.not_found()
-        response = FileResponse(open(path, 'rb'), content_type='image/jpeg')
-        # Re-checked on every view: a shared browser must not show another instructor's cached photo
+        # A photo never changes (a re-capture gets a new id), so the browser's copy stays valid: it
+        # asks again on every view (a shared browser must not show another instructor's cached
+        # photo) and, once the checks above pass, gets a bodiless 304 instead of the image.
+        etag = f'"expression-snapshot-{snapshot_id}"'
+        if request.headers.get('If-None-Match') == etag:
+            response = HttpResponse(status=status.HTTP_304_NOT_MODIFIED)
+        else:
+            image = photos.values_list('image', flat=True).first()
+            if image is None:
+                return self.not_found()
+            response = HttpResponse(bytes(image), content_type='image/jpeg')
+        response['ETag'] = etag
         response['Cache-Control'] = 'private, no-cache'
         return response

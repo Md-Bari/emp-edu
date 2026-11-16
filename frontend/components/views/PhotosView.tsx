@@ -1,15 +1,17 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ImageOff, Loader2, RefreshCw, Search, X } from 'lucide-react';
 import { useDashboardStore } from '@/lib/store';
 import { matchesSection } from '@/lib/sections';
 import { api } from '@/lib/api';
+import { onExpressionPhotoEvent } from '@/lib/websocket';
 import { EMOTIONS, EMOTION_META, type EmotionType } from '@/lib/emotions';
 import type { ExpressionPhoto, ExpressionPhotoRow } from '@/lib/types';
 import { Card, PageTitle } from './ui';
 
-const REFRESH_MS = 15_000;
+// Photos arrive live over the socket; this slow reload only covers a missed event
+const REFRESH_MS = 60_000;
 
 interface Selected {
   student: ExpressionPhotoRow;
@@ -21,12 +23,18 @@ interface Selected {
 export function PhotosView() {
   const sessionId = useDashboardStore((s) => s.session?.id);
   const sectionFilter = useDashboardStore((s) => s.sectionFilter);
+  const socketOpen = useDashboardStore((s) => s.connection === 'open');
   const [rows, setRows] = useState<ExpressionPhotoRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<Selected | null>(null);
   const [removing, setRemoving] = useState<number | null>(null);
+  // The live listener needs the current rows without re-subscribing on every change
+  const rowsRef = useRef(rows);
+  useEffect(() => {
+    rowsRef.current = rows;
+  }, [rows]);
 
   /** Delete one photo; the slot goes back to "Not yet" and is captured again on the next clear sighting */
   const removePhoto = (studentId: number, emotion: EmotionType, photo: ExpressionPhoto) => {
@@ -66,7 +74,9 @@ export function PhotosView() {
       .finally(() => setLoading(false));
   };
 
-  // Load now and keep the gallery fresh while the tab is open (new photos appear as students show expressions)
+  // Load the gallery, then follow it live: the server pushes every stored and deleted photo over the
+  // instructor socket. A full reload happens whenever the socket (re)opens, since events sent while
+  // it was down are gone, and on a slow timer as a safety net.
   useEffect(() => {
     if (sessionId === undefined) return;
     let cancelled = false;
@@ -84,11 +94,41 @@ export function PhotosView() {
         });
     pull();
     const timer = setInterval(pull, REFRESH_MS);
+
+    const unsubscribe = onExpressionPhotoEvent((event) => {
+      if (event.type === 'removed') {
+        setRows(
+          (prev) =>
+            prev?.map((r) => {
+              // Match the id too: a late "removed" must not wipe the photo captured after it
+              if (r.student_id !== event.student_id || r.photos[event.emotion]?.id !== event.id) return r;
+              const photos = { ...r.photos };
+              delete photos[event.emotion];
+              return { ...r, photos };
+            }) ?? prev
+        );
+        setSelected((s) => (s?.photo.id === event.id ? null : s));
+        return;
+      }
+      // A student the gallery has no row for yet (joined after it loaded): fetch their row
+      if (!rowsRef.current?.some((r) => r.student_id === event.student_id)) {
+        pull();
+        return;
+      }
+      setRows(
+        (prev) =>
+          prev?.map((r) =>
+            r.student_id === event.student_id ? { ...r, photos: { ...r.photos, [event.emotion]: event.photo } } : r
+          ) ?? prev
+      );
+    });
+
     return () => {
       cancelled = true;
       clearInterval(timer);
+      unsubscribe();
     };
-  }, [sessionId]);
+  }, [sessionId, socketOpen]);
 
   useEffect(() => {
     if (!selected) return;

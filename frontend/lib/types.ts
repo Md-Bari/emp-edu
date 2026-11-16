@@ -156,6 +156,11 @@ export interface ExpressionPhoto {
   url: string; // API path; fetch with the session cookie
 }
 
+/** Live gallery change pushed over the instructor socket (`photo.new` / `photo.removed`) */
+export type ExpressionPhotoEvent =
+  | { type: 'new'; student_id: number; emotion: EmotionType; photo: ExpressionPhoto }
+  | { type: 'removed'; student_id: number; emotion: EmotionType; id: number };
+
 export interface ExpressionPhotoRow {
   student_id: number;
   name: string;

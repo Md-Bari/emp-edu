@@ -301,9 +301,11 @@ class StudentConsumer(AsyncWebsocketConsumer):
             stored = await database_sync_to_async(snapshots.save_first)(
                 self.session_id, self.user, emotion, result['confidence'], jpeg,
             )
+            if stored:  # the instructor's open gallery shows it at once
+                await self.channel_layer.group_send(self.group_name, snapshots.new_photo_event(stored))
         except Exception as exc:  # a snapshot must never break the live stream
             print(f"[snapshots] {self.user.username}/{emotion}: {exc!r}")
-            stored = False
+            stored = None
         if not stored:
             # Failed (retry on a later frame) or another tab stored it first (keep it claimed)
             self.snapshot_emotions = await database_sync_to_async(snapshots.stored_emotions)(
@@ -718,6 +720,12 @@ class InstructorConsumer(AsyncWebsocketConsumer):
 
     async def broadcast_participant_removed(self, event):
         await self.send(text_data=json.dumps({"type": "participant.removed", "data": {"student_id": event["student_id"]}}))
+
+    async def broadcast_photo_new(self, event):
+        await self.send(text_data=json.dumps({"type": "photo.new", "data": event["photo"]}))
+
+    async def broadcast_photo_removed(self, event):
+        await self.send(text_data=json.dumps({"type": "photo.removed", "data": event["photo"]}))
 
     async def broadcast_model_status(self, event):
         await self.send(text_data=json.dumps({"type": "model.status", "data": event["status"]}))

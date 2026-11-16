@@ -131,14 +131,15 @@ class TeachingSuggestion(models.Model):
 class ExpressionSnapshot(models.Model):
     """
     The first face crop of each expression a student showed in a session (one per class).
-    The JPEG lives under MEDIA_ROOT (see settings.EXPRESSION_SNAPSHOTS_ENABLED); students are
-    told on the consent screen, and withdrawing consent deletes their snapshots.
+    The JPEG bytes are stored in the row itself (see settings.EXPRESSION_SNAPSHOTS_ENABLED), so
+    deleting the row deletes the photo; students are told on the consent screen, and withdrawing
+    consent deletes their snapshots. Queries that only list photos should `.defer('image')`.
     """
     session = models.ForeignKey(ClassSession, on_delete=models.CASCADE, related_name='expression_snapshots')
     student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='expression_snapshots')
     emotion = models.CharField(max_length=20, choices=EMOTION_CHOICES)
     confidence = models.FloatField()
-    image = models.CharField(max_length=255)  # path relative to MEDIA_ROOT
+    image = models.BinaryField()  # the JPEG face crop
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

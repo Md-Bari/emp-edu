@@ -23,9 +23,12 @@ class TeachingSuggestionAdmin(admin.ModelAdmin):
 
 @admin.register(ExpressionSnapshot)
 class ExpressionSnapshotAdmin(admin.ModelAdmin):
-    list_display = ('student', 'session', 'emotion', 'confidence', 'image', 'created_at')
+    list_display = ('student', 'session', 'emotion', 'confidence', 'created_at')
     list_filter = ('session', 'emotion')
     search_fields = ('student__username', 'student__first_name', 'student__last_name')
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).defer('image')  # never load the JPEGs for a list
 
 
 @admin.register(FaceReference)

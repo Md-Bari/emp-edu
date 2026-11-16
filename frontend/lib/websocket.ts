@@ -6,6 +6,7 @@ import { wsBase } from './config';
 import { refreshAuth } from './api';
 import { handleScreenResult } from './screenCapture';
 import type {
+  ExpressionPhotoEvent,
   ModelStatusData,
   SessionInfo,
   SessionSnapshotData,
@@ -36,6 +37,20 @@ export function sendInstructorAction(action: string, payload: Record<string, unk
     return true;
   }
   return false;
+}
+
+type PhotoListener = (event: ExpressionPhotoEvent) => void;
+const photoListeners = new Set<PhotoListener>();
+
+/**
+ * Hear about expression photos the moment they are stored or deleted. Returns the unsubscribe
+ * function. Only an open gallery cares, so these are handed over instead of kept in the store.
+ */
+export function onExpressionPhotoEvent(listener: PhotoListener) {
+  photoListeners.add(listener);
+  return () => {
+    photoListeners.delete(listener);
+  };
 }
 
 /**
@@ -91,6 +106,15 @@ export function useInstructorSocket(sessionId: number | null, onAuthFailure?: ()
           const { ok, message } = payload as unknown as { ok: boolean; message: string };
           store().setScreen({ labelResult: { ok, message, at: Date.now() } });
           if (ok) store().logActivity('system', message);
+          break;
+        }
+        case 'photo.new':
+        case 'photo.removed': {
+          const event = {
+            ...(payload.data as object),
+            type: payload.type === 'photo.new' ? 'new' : 'removed',
+          } as ExpressionPhotoEvent;
+          photoListeners.forEach((listener) => listener(event));
           break;
         }
         case 'model.status':
