@@ -227,14 +227,36 @@ function TopBar({
   );
 }
 
-/** Student: sends their own camera to the expression model while the camera is on. */
+/**
+ * Student: sends their own camera to the expression model while the camera is on, and shows
+ * them the expression the model reads from their face, the same reading the instructor sees.
+ */
 function ExpressionChip({ sessionId }: { sessionId: number }) {
   const { cameraTrack } = useLocalParticipant();
   const track = cameraTrack && !cameraTrack.isMuted ? cameraTrack.track?.mediaStreamTrack ?? null : null;
   const state = useExpressionStream(sessionId, track);
+  const reading = state.status === 'on' && state.emotion && state.emotion in EMOTION_META ? EMOTION_META[state.emotion] : null;
+
+  if (reading) {
+    const Icon = reading.icon;
+    return (
+      <span
+        title={`Your expression right now: ${reading.label}. Your instructor sees the same reading.`}
+        className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg font-semibold text-white transition-colors"
+        style={{ backgroundColor: `${reading.color}33`, boxShadow: `inset 0 0 0 1px ${reading.color}88` }}
+        aria-live="polite"
+      >
+        <Icon className="w-3.5 h-3.5" style={{ color: reading.color }} />
+        <span>{reading.label}</span>
+      </span>
+    );
+  }
+
   const label =
     state.status === 'on'
-      ? 'Expression analysis on'
+      ? state.message
+        ? 'No face detected'
+        : 'Reading your expression…'
       : state.status === 'connecting'
       ? 'Connecting analysis…'
       : state.status === 'error'
