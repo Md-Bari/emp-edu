@@ -1,4 +1,6 @@
 {
+  "expression_model": "best.onnx",
+  "model": "yolo11m-cls (corrected labels, balanced, noise-robust fine-tune)",
   "classes": [
     "angry",
     "fear",
@@ -13,5 +15,8 @@
   "face_detector": "face_detection_yunet_2023mar.onnx",
   "face_margin": 0.2,
   "grayscale_input": true,
-  "grayscale_inside_model": false
+  "grayscale_inside_model": false,
+  "tta_inside_model": false,
+  "onnx_test_acc": 0.9102,
+  "onnx_test_acc_corrected_labels": 0.9365
 }

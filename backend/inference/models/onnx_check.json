@@ -1,0 +1,28 @@
+{
+  "onnx_file": "D:\\Shitol\\last_codes\\outputs\\yolo11m_finetuned\\runs\\yolo11m_corrected_labels_balanced_20261116_013049\\weights\\best.onnx",
+  "size_mb": 41.51,
+  "opset": 17,
+  "input": {
+    "name": "images",
+    "shape": [
+      "batch",
+      "3",
+      "height",
+      "width"
+    ],
+    "dtype": "float32, RGB, 0-1, NCHW"
+  },
+  "class_names": [
+    "angry",
+    "fear",
+    "happy",
+    "neutral",
+    "sad",
+    "surprise"
+  ],
+  "top1_agreement_with_pytorch": 0.9993809965954813,
+  "max_abs_prob_diff_vs_pytorch": 0.015016049146652222,
+  "onnx_test_accuracy_original_labels": 0.9102445063447849,
+  "onnx_test_accuracy_corrected_labels": 0.9365325077399381,
+  "pytorch_single_view_test_accuracy_corrected_labels": 0.9371517027863777
+}
