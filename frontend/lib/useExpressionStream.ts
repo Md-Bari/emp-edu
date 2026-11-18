@@ -63,8 +63,9 @@ export function useExpressionStream(sessionId: number | null, track: MediaStream
             authRetried = false;
             setConnected(true);
           } else if (data.type === 'telemetry') setReading({ emotion: data.emotion, message: null, error: false });
+          // No face (or no model): drop the last reading rather than keep showing a stale expression
           else if (data.type === 'face.missing' || data.type === 'model.missing')
-            setReading((r) => ({ ...r, message: data.message }));
+            setReading((r) => ({ ...r, emotion: null, message: data.message }));
           else if (data.type === 'error') setReading({ emotion: null, message: data.message, error: true });
         } catch {
           // ignore malformed messages
@@ -127,6 +128,8 @@ export function useExpressionStream(sessionId: number | null, track: MediaStream
     return () => {
       clearInterval(timer);
       video.srcObject = null;
+      // Camera off or socket dropped: the next reading starts fresh
+      setReading((r) => (r.error ? r : { emotion: null, message: null, error: false }));
     };
   }, [track, connected]);
 
