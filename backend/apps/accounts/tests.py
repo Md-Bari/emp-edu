@@ -122,7 +122,8 @@ class AdminPortalTestCase(TestCase):
         self.assertEqual(res.data['user']['role'], 'admin')
 
     def test_only_admins_reach_the_admin_api(self):
-        urls = ['/api/admin/overview/', '/api/admin/instructors/', '/api/admin/students/', '/api/admin/logs/']
+        urls = ['/api/admin/overview/', '/api/admin/instructors/', '/api/admin/students/', '/api/admin/logs/',
+                '/api/admin/photos/', '/api/admin/photos/1/image/']
         for user in (None, self.teacher, self.student):
             self.client.force_authenticate(user)
             for url in urls:
@@ -130,6 +131,31 @@ class AdminPortalTestCase(TestCase):
             res = self.client.post('/api/admin/instructors/', {'first_name': 'X', 'username': 'xx', 'password': 'p'})
             self.assertIn(res.status_code, (401, 403))
         self.assertFalse(User.objects.filter(username='xx').exists())
+
+    def test_admin_browses_every_stored_expression_photo(self):
+        from apps.analytics import snapshots
+        from apps.courses.models import ClassSession
+        session = ClassSession.objects.get(session_code='CS1-1')
+        happy = snapshots.save_first(session.id, self.student, 'happy', 0.91, b'\xff\xd8happy')
+        snapshots.save_first(session.id, self.student, 'sad', 0.7, b'\xff\xd8sad')
+        self.client.force_authenticate(self.admin)
+
+        page = self.client.get('/api/admin/photos/').data
+        self.assertEqual((page['total'], page['emotions']['happy'], page['emotions']['angry']), (2, 1, 0))
+        only_happy = self.client.get('/api/admin/photos/?emotion=happy&q=kid').data
+        self.assertEqual(only_happy['total'], 1)
+        self.assertEqual(only_happy['emotions']['sad'], 1)  # the other buttons keep their totals
+        row = only_happy['results'][0]
+        self.assertEqual((row['id'], row['confidence'], row['student']['name'], row['session']['title'],
+                          row['course'], row['instructor']), (happy.id, 91, 'Kid', 'L1', 'CS1 Data', 'Tea'))
+        self.assertEqual(self.client.get('/api/admin/photos/?q=nobody').data['total'], 0)
+
+        image = self.client.get(row['url'])
+        self.assertEqual((image.status_code, image['Content-Type'], image.content), (200, 'image/jpeg', b'\xff\xd8happy'))
+        # Removed by the instructor (or by the student withdrawing consent): gone for the admin too
+        snapshots.remove(happy)
+        self.assertEqual(self.client.get(row['url']).status_code, 404)
+        self.assertEqual(self.client.get('/api/admin/photos/').data['total'], 1)
 
     def test_admin_sees_everyone_and_creates_an_instructor(self):
         self.client.force_authenticate(self.admin)
