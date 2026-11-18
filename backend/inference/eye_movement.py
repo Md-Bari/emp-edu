@@ -226,6 +226,9 @@ class EyeMovementAnalyzer:
                 prev_open = eyes_open
 
         last = samples[-1]
+        # How long the eyes have been closed right now. "Drowsy" describes the present, so it clears
+        # on the first open-eye frame instead of lasting until a long closure leaves the window.
+        closed_now = (last[0] - closed_since) if closed_since is not None else 0.0
         trail = [list(s[1]) for s in samples if s[1] is not None][-TRAIL_POINTS:]
         return {
             'gaze': list(last[1]) if last[1] is not None else None,
@@ -238,7 +241,8 @@ class EyeMovementAnalyzer:
             'gaze_shifts_per_min': round(shifts * per_min, 1) if per_min else None,
             'closures_per_min': round(closures * per_min, 1) if per_min else None,
             'longest_closure_s': round(longest, 1),
-            'drowsy': longest >= DROWSY_CLOSURE_SECONDS,
+            'closed_for_s': round(closed_now, 1),
+            'drowsy': closed_now >= DROWSY_CLOSURE_SECONDS,
             'trail': trail,
             'window_s': round(span),
         }
