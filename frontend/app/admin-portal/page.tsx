@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Activity, GraduationCap, LayoutDashboard, Loader2, LogOut, ShieldCheck, Users } from 'lucide-react';
+import { Activity, GraduationCap, Images, LayoutDashboard, Loader2, LogOut, ShieldCheck, Users } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { homeFor } from '@/lib/roles';
 import { useDashboardStore } from '@/lib/store';
@@ -11,12 +11,14 @@ import type { AdminAccount, AuthUser } from '@/lib/types';
 import { OverviewTab } from '@/components/admin/OverviewTab';
 import { InstructorsTab } from '@/components/admin/InstructorsTab';
 import { StudentsTab } from '@/components/admin/StudentsTab';
+import { PhotosTab } from '@/components/admin/PhotosTab';
 import { ActivityTab, type LogFilter } from '@/components/admin/ActivityTab';
 
 const TABS = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
   { id: 'instructors', label: 'Instructors', icon: ShieldCheck },
   { id: 'students', label: 'Students', icon: Users },
+  { id: 'photos', label: 'Photos', icon: Images },
   { id: 'activity', label: 'Activity log', icon: Activity },
 ] as const;
 type Tab = (typeof TABS)[number]['id'];
@@ -97,6 +99,7 @@ export default function AdminPage() {
         {tab === 'overview' && <OverviewTab onShowLog={() => setTab('activity')} />}
         {tab === 'instructors' && <InstructorsTab onShowLog={showLogFor} />}
         {tab === 'students' && <StudentsTab onShowLog={showLogFor} />}
+        {tab === 'photos' && <PhotosTab />}
         {tab === 'activity' && <ActivityTab filter={logFilter} onFilter={setLogFilter} />}
       </main>
     </div>
