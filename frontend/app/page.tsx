@@ -122,25 +122,30 @@ export default function DashboardPage() {
           router.replace(homeFor(me.role));
           return;
         }
-        const remembered = rememberedSession();
-        try {
-          if (!remembered) throw new Error('no remembered session');
-          await showSession(remembered);
-        } catch {
-          try {
-            const current = await api.currentSession();
-            await showSession(current.id);
-          } catch (e) {
-            if (!(e instanceof ApiError && e.status === 404)) throw e;
-            // No session yet: a first-time instructor creates a class; others pick or schedule one
-            const courses = await api.courses();
-            if (cancelled) return;
-            if (!courses.length) {
-              setBoot({ state: 'setup' });
-              return;
-            }
-            setTab('Sessions');
+        // The last viewed session, unless it has ended while another class is live: then the live
+        // one, or the dashboard would sit on a finished session while students stream elsewhere.
+        const rememberedId = rememberedSession();
+        const remembered = rememberedId ? await api.session(rememberedId).catch(() => null) : null;
+        let current: { id: number; status: string } | null = null;
+        if (remembered?.status !== 'LIVE') {
+          current = await api.currentSession().catch((e) => {
+            if (e instanceof ApiError && e.status === 404) return null;
+            throw e;
+          });
+        }
+        const target = current?.status === 'LIVE' ? current : (remembered ?? current);
+        if (cancelled) return;
+        if (target) {
+          await showSession(target.id);
+        } else {
+          // No session yet: a first-time instructor creates a class; others pick or schedule one
+          const courses = await api.courses();
+          if (cancelled) return;
+          if (!courses.length) {
+            setBoot({ state: 'setup' });
+            return;
           }
+          setTab('Sessions');
         }
         if (!cancelled) setBoot({ state: 'ready' });
       } catch (e) {
