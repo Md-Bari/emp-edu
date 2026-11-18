@@ -16,6 +16,7 @@ DEFAULT_METADATA = {
 }
 
 FACE_SCORE_THRESHOLD = 0.6
+# Used when deployment_metadata.json names no `expression_model`
 PREFERRED_EXPRESSION_MODEL = 'yolov8m_face_expression.onnx'
 
 # Pretrained fallback used only while no expression model of your own is in models/:
@@ -89,9 +90,17 @@ class EmotionModel:
             f for f in glob.glob(os.path.join(self.models_dir, '*.onnx'))
             if os.path.basename(f) not in (detector_file, recognizer_file, FERPLUS_FILE)
         )
-        preferred_model = os.path.join(self.models_dir, PREFERRED_EXPRESSION_MODEL)
+        named = self.metadata.get('expression_model')
+        if named and os.path.join(self.models_dir, named) not in classifier_files:
+            print(f"[Inference] Metadata names expression model {named}, which is not in models/. "
+                  f"Emotion predictions are disabled.")
+            return
+        preferred_model = os.path.join(self.models_dir, named or PREFERRED_EXPRESSION_MODEL)
         if preferred_model in classifier_files:
             classifier_files = [preferred_model]
+        elif len(classifier_files) > 1:
+            print(f"[Inference] Several expression models in models/ ({', '.join(map(os.path.basename, classifier_files))}); "
+                  f"using {os.path.basename(classifier_files[0])}. Set expression_model in deployment_metadata.json.")
         ferplus_path = os.path.join(self.models_dir, FERPLUS_FILE)
         if not classifier_files and os.path.exists(ferplus_path):
             missing = [c for c in self.metadata['classes'] if c.lower() not in FERPLUS_NAMES]
