@@ -133,6 +133,14 @@ class EmotionModel:
                       f"{len(self.metadata['classes'])} classes. Emotion predictions are disabled.")
                 self.detector = None
                 return
+            # Ultralytics exports record their class order; a different order would mislabel every face
+            embedded = self._embedded_class_names(session)
+            expected = [c.lower() for c in self.metadata['classes']]
+            if not self.ferplus and embedded and embedded != expected:
+                print(f"[Inference] {os.path.basename(model_path)} classes {embedded} do not match the metadata "
+                      f"order {expected}. Emotion predictions are disabled.")
+                self.detector = None
+                return
             self.session = session
             self.model_name = os.path.basename(model_path) + (' (pretrained fallback)' if self.ferplus else '')
             print(f"[Inference] Loaded {self.model_name} ({', '.join(self.metadata['classes'])}) "
@@ -195,6 +203,20 @@ class EmotionModel:
         crop = cv2.resize(crop, (nw, nh), interpolation=cv2.INTER_AREA if scale < 1 else cv2.INTER_LINEAR)
         top, left = (nh - size) // 2, (nw - size) // 2
         return crop[top:top + size, left:left + size]
+
+    @staticmethod
+    def _embedded_class_names(session):
+        """Class names stored in an Ultralytics ONNX export ("{0: 'angry', ...}"), in index order; else None."""
+        import ast
+        raw = session.get_modelmeta().custom_metadata_map.get('names')
+        if not raw:
+            return None
+        try:
+            names = ast.literal_eval(raw)
+            return [str(names[i]).lower() for i in sorted(names)]
+        except (ValueError, SyntaxError, TypeError, KeyError):
+            return None
+
     def _preprocess(self, frame_bgr, box):
         grayscale = self.ferplus or self.metadata.get('grayscale_input', False)
         crop = self.face_crop(frame_bgr, box, grayscale=grayscale)
