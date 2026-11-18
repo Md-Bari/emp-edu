@@ -29,10 +29,27 @@ function mean(values: (number | null | undefined)[]): number | null {
 
 const fmt = (v: number | null, digits = 0, suffix = '') => (v === null ? '—' : `${v.toFixed(digits)}${suffix}`);
 
+const isTracked = (s: StudentData): s is Tracked => s.online && !!s.eye;
+
+/** Picker label: who is sending eye readings now, and why the others are not */
+function pickerLabel(s: StudentData) {
+  if (isTracked(s)) return s.name;
+  return `${s.name} (${s.online ? 'no camera data' : 'offline'})`;
+}
+
 export function EyeMovementPanel({ students }: { students: StudentData[] }) {
-  const tracked = students.filter((s): s is Tracked => s.online && !!s.eye);
+  const tracked = students.filter(isTracked);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const selected = tracked.find((s) => s.id === selectedId) ?? null;
+  // The chosen student stays chosen while their camera drops out, so the map can say so
+  const chosen = students.find((s) => s.id === selectedId) ?? null;
+  const selected = chosen && isTracked(chosen) ? chosen : null;
+  // Students sending readings first, then everyone else, each alphabetically
+  const options = [...students].sort(
+    (a, b) => Number(isTracked(b)) - Number(isTracked(a)) || a.name.localeCompare(b.name)
+  );
+  // With a student chosen the map shows only them; otherwise everyone's current gaze
+  const dots = chosen ? (selected ? [selected] : []) : tracked;
+  const selectedStatus = selected ? eyeStatus(selected.eye) : null;
 
   const onScreen = mean(tracked.map((s) => s.eye.on_screen_pct));
   const fixation = mean(tracked.map((s) => s.eye.fixation_pct));
@@ -58,8 +75,29 @@ export function EyeMovementPanel({ students }: { students: StudentData[] }) {
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
         <Card
           title="Gaze Map"
-          subtitle={selected ? `${selected.name}: scanpath of the last ${selected.eye.trail.length} readings` : 'Where each student is looking now; select a student to see their scanpath'}
+          subtitle={
+            chosen
+              ? selected
+                ? `${selected.name}: gaze movement over the last ${selected.eye.trail.length} readings`
+                : `${chosen.name}: waiting for webcam readings`
+              : 'Where each student is looking now; choose a student to follow their gaze movement'
+          }
           className="xl:col-span-5"
+          action={
+            <select
+              value={selectedId ?? ''}
+              onChange={(e) => setSelectedId(e.target.value ? Number(e.target.value) : null)}
+              aria-label="Student to show on the gaze map"
+              className="h-8 max-w-48 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-700 focus:outline-hidden focus:border-violet-400"
+            >
+              <option value="">All students</option>
+              {options.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {pickerLabel(s)}
+                </option>
+              ))}
+            </select>
+          }
         >
           <svg viewBox={`0 0 ${MAP_W} ${MAP_H}`} className="w-full h-auto" role="img" aria-label="Gaze positions relative to the screen">
             <rect x={0} y={0} width={MAP_W} height={MAP_H} rx={10} className="fill-slate-50" />
@@ -87,7 +125,7 @@ export function EyeMovementPanel({ students }: { students: StudentData[] }) {
             {selected?.eye.trail.map(([x, y], i) => (
               <circle key={i} cx={px(x)} cy={py(y)} r={2.5} className="fill-violet-400" opacity={0.3 + (0.7 * i) / selected.eye.trail.length} />
             ))}
-            {tracked.map((s) => {
+            {dots.map((s) => {
               if (!s.eye.gaze) return null;
               const [x, y] = s.eye.gaze;
               const active = s.id === selectedId;
@@ -106,7 +144,40 @@ export function EyeMovementPanel({ students }: { students: StudentData[] }) {
               );
             })}
           </svg>
-          {tracked.length === 0 && <p className="text-xs text-slate-400 mt-2">Waiting for webcam readings…</p>}
+          {chosen && !selected && (
+            <p className="text-xs text-slate-400 mt-2">
+              {chosen.online
+                ? `${chosen.name} is online but no face readings are coming in. Their camera may be off or they may not be facing it.`
+                : `${chosen.name} is offline. Their gaze appears here once they join with their camera on.`}
+            </p>
+          )}
+          {!chosen && tracked.length === 0 && <p className="text-xs text-slate-400 mt-2">Waiting for webcam readings…</p>}
+          {selected && selectedStatus && (
+            <div className="mt-3 pt-3 border-t border-slate-100">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <span className="flex items-center gap-2 min-w-0">
+                  <Avatar name={selected.name} src={selected.avatar_url} className="w-6 h-6 rounded-full text-[9px]" imgClassName="object-cover" />
+                  <span className="truncate text-xs font-semibold text-slate-800">{selected.name}</span>
+                </span>
+                <span className={`inline-block whitespace-nowrap text-[11px] font-semibold px-2 py-0.5 rounded-full border ${selectedStatus.className}`}>
+                  {selectedStatus.label}
+                </span>
+              </div>
+              <dl className="grid grid-cols-4 gap-2 text-center">
+                {[
+                  ['On screen', `${selected.eye.on_screen_pct}%`],
+                  ['Fixation', `${selected.eye.fixation_pct}%`],
+                  ['Shifts/min', fmt(selected.eye.gaze_shifts_per_min, 1)],
+                  ['Closures/min', fmt(selected.eye.closures_per_min, 1)],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-lg bg-slate-50 px-1 py-1.5">
+                    <dt className="text-[10px] text-slate-500">{label}</dt>
+                    <dd className="text-xs font-semibold font-mono tabular-nums text-slate-800">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          )}
         </Card>
 
         <Card title="Eye Movement per Student" subtitle="Last minute of webcam frames · lowest screen time first" className="xl:col-span-7">
