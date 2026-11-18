@@ -86,6 +86,17 @@ class AnalyzerTests(SimpleTestCase):
         self.assertFalse(s['drowsy'])
         s = self.feed([sample(0)] * 30 + [sample(0, eyes_open=False)] * 5)
         self.assertTrue(s['drowsy'])
+        self.assertGreaterEqual(s['closed_for_s'], 1.0)
+
+    def test_drowsiness_clears_as_soon_as_the_eyes_open(self):
+        # A long closure, then one open-eye frame: no longer "eyes closing", though it is remembered
+        s = self.feed([sample(0)] * 30 + [sample(0, eyes_open=False)] * 8 + [sample(0)])
+        self.assertFalse(s['drowsy'])
+        self.assertEqual(s['closed_for_s'], 0.0)
+        self.assertGreaterEqual(s['longest_closure_s'], 2.0)
+        # Losing the face is not "eyes closing" either
+        s = self.feed([sample(0)] * 30 + [sample(0, eyes_open=False)] * 8 + [None])
+        self.assertFalse(s['drowsy'])
 
     def test_missing_face_counts_as_off_screen(self):
         s = self.feed([sample(0)] * 30 + [None] * 10)
