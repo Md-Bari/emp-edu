@@ -1,6 +1,6 @@
 """
 Admin portal API (/api/admin/...): create and manage instructor accounts, see every instructor
-and student, and read the activity log. Admin accounts only.
+and student, browse every stored expression photo, and read the activity log. Admin accounts only.
 """
 from datetime import timedelta
 
@@ -9,11 +9,15 @@ from django.utils import timezone
 from rest_framework import permissions, serializers, status, views
 from rest_framework.response import Response
 
+from apps.analytics import snapshots
+from apps.analytics.emotions import EMOTIONS
+from apps.analytics.models import ExpressionSnapshot
 from apps.courses.models import ClassSession, Course, Enrollment
 from . import activity
 from .models import ActivityLog, User
 
 LOG_PAGE_SIZE = 50
+PHOTO_PAGE_SIZE = 60
 
 
 class IsAdmin(permissions.BasePermission):
@@ -217,6 +221,59 @@ class StudentListView(AdminView):
             'consent_given': s.consent_given,
             'classes': classes.get(s.id, []),
         } for s in students])
+
+
+class PhotoListView(AdminView):
+    """Every stored expression photo, newest first: ?emotion=&student=<id>&session=<id>&q=&page=."""
+
+    def get(self, request):
+        params = request.query_params
+        qs = (ExpressionSnapshot.objects.defer('image')
+              .select_related('student', 'session__course__instructor').order_by('-created_at', '-id'))
+        if params.get('student', '').isdigit():
+            qs = qs.filter(student_id=params['student'])
+        if params.get('session', '').isdigit():
+            qs = qs.filter(session_id=params['session'])
+        q = params.get('q', '').strip()
+        if q:
+            qs = qs.filter(Q(student__username__icontains=q) | Q(student__first_name__icontains=q)
+                           | Q(student__last_name__icontains=q) | Q(session__title__icontains=q)
+                           | Q(session__course__code__icontains=q) | Q(session__course__title__icontains=q))
+        # Counted before the expression filter, so every expression's total stays on its button
+        by_emotion = dict(qs.order_by().values_list('emotion').annotate(n=Count('id')))
+        if params.get('emotion') in EMOTIONS:
+            qs = qs.filter(emotion=params['emotion'])
+        try:
+            page = max(1, int(params.get('page', 1)))
+        except ValueError:
+            page = 1
+        total = qs.count()
+        start = (page - 1) * PHOTO_PAGE_SIZE
+        return Response({
+            'total': total,
+            'page': page,
+            'page_size': PHOTO_PAGE_SIZE,
+            'emotions': {emotion: by_emotion.get(emotion, 0) for emotion in EMOTIONS},
+            'results': [{
+                'id': p.id,
+                'emotion': p.emotion,
+                'confidence': round(p.confidence * 100),
+                'created_at': p.created_at.isoformat(),
+                'url': f'/api/admin/photos/{p.id}/image/',
+                'student': {'id': p.student_id, 'name': name_of(p.student), 'username': p.student.username},
+                'session': {'id': p.session_id, 'title': p.session.title},
+                'course': f'{p.session.course.code} {p.session.course.title}',
+                'instructor': name_of(p.session.course.instructor),
+            } for p in qs[start:start + PHOTO_PAGE_SIZE]],
+        })
+
+
+class PhotoImageView(AdminView):
+    """One stored photo, for the admin's gallery."""
+
+    def get(self, request, photo_id):
+        return (snapshots.image_response(request, photo_id)
+                or Response({'detail': 'Photo not found.'}, status=status.HTTP_404_NOT_FOUND))
 
 
 class ActivityLogView(AdminView):
