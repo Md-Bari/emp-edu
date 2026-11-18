@@ -164,10 +164,13 @@ class EmotionModel:
 
     def detect_faces(self, frame_bgr, max_faces=1, min_size=0, min_score=0.0, plausible_only=False):
         """Faces as (x, y, w, h, landmarks[5x2], score), largest first."""
+        detector = self.detector
+        if detector is None:  # no model loaded (or loading failed): nothing to detect with
+            return []
         h, w = frame_bgr.shape[:2]
         with self._detector_lock:
-            self.detector.setInputSize((w, h))
-            _, faces = self.detector.detect(frame_bgr)
+            detector.setInputSize((w, h))
+            _, faces = detector.detect(frame_bgr)
         if faces is None or len(faces) == 0:
             return []
         found = [
@@ -235,15 +238,18 @@ class EmotionModel:
 
     def _classify(self, batch):
         """[N,3,S,S] -> [N, classes] probabilities."""
+        session = self.session
+        if session is None:
+            raise RuntimeError('No expression model is loaded')
         if self.ferplus:
             # The FER+ graph has a fixed batch of 1; keep only the classes this app uses
             logits = np.stack([
-                self.session.run(None, {self.input_name: np.ascontiguousarray(x[None])})[0][0]
+                np.asarray(session.run(None, {self.input_name: np.ascontiguousarray(x[None])})[0])[0]
                 for x in batch
             ]).astype(np.float64)[:, self.ferplus_index]
             probs = np.exp(logits - logits.max(axis=1, keepdims=True))
             return probs / probs.sum(axis=1, keepdims=True)
-        probs = self.session.run(None, {self.input_name: np.ascontiguousarray(batch)})[0].astype(np.float64)
+        probs = np.asarray(session.run(None, {self.input_name: np.ascontiguousarray(batch)})[0], dtype=np.float64)
         if self.metadata.get('output') != 'probabilities':
             probs = np.exp(probs - probs.max(axis=1, keepdims=True))
             probs /= probs.sum(axis=1, keepdims=True)
