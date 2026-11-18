@@ -45,6 +45,9 @@ export interface EyeMovement {
   gaze_shifts_per_min: number | null;
   closures_per_min: number | null;
   longest_closure_s: number;
+  /** How long the eyes have been closed right now (0 while open) */
+  closed_for_s?: number;
+  /** Eyes closed right now for at least 1 s */
   drowsy: boolean;
   /** Recent gaze points, oldest first (scanpath) */
   trail: [number, number][];
