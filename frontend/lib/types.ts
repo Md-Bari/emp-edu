@@ -275,6 +275,24 @@ export interface ActivityPage {
   results: ActivityEntry[];
 }
 
+/** One stored expression photo as the admin portal lists it */
+export interface AdminPhoto extends ExpressionPhoto {
+  emotion: EmotionType;
+  student: { id: number; name: string; username: string };
+  session: { id: number; title: string };
+  course: string;
+  instructor: string;
+}
+
+export interface AdminPhotoPage {
+  total: number;
+  page: number;
+  page_size: number;
+  /** Photos per expression for the current search (ignores the expression filter) */
+  emotions: Record<EmotionType, number>;
+  results: AdminPhoto[];
+}
+
 export interface AdminOverview {
   counts: {
     instructors: number;

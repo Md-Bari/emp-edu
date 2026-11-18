@@ -5,6 +5,7 @@ import type {
   AdminAccount,
   AdminInstructor,
   AdminOverview,
+  AdminPhotoPage,
   AdminStudent,
   NewInstructor,
   AuthUser,
@@ -201,6 +202,9 @@ export const api = {
   adminCreateInstructor: (data: NewInstructor) => request<AdminAccount>('/api/admin/instructors/', json(data)),
   adminStudents: (q = '') => request<AdminStudent[]>(`/api/admin/students/${query({ q })}`),
   adminUpdateAccount: (id: number, data: AccountChange) => request<AdminAccount>(`/api/admin/accounts/${id}/`, patch(data)),
+  /** Every stored expression photo, newest first */
+  adminPhotos: (params: { emotion?: string; q?: string; page?: number }) =>
+    request<AdminPhotoPage>(`/api/admin/photos/${query(params)}`),
   adminLogs: (params: { role?: string; action?: string; user?: number; q?: string; page?: number }) =>
     request<ActivityPage>(`/api/admin/logs/${query(params)}`),
 
