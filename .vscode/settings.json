@@ -1,3 +1,7 @@
 {
-    "python.terminal.useEnvFile": true
+    "python.terminal.useEnvFile": true,
+    // The backend's own virtualenv (has OpenCV, ONNX Runtime and Django) so imports resolve
+    "python.defaultInterpreterPath": "${workspaceFolder}/backend/venv/Scripts/python.exe",
+    // backend/inference is put on sys.path at runtime (see apps/analytics/inference_engine.py)
+    "python.analysis.extraPaths": ["backend", "backend/inference"]
 }
