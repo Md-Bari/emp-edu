@@ -14,6 +14,7 @@ from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
+from django.http import HttpResponse
 
 from .models import ExpressionSnapshot
 
@@ -40,6 +41,30 @@ def photo_payload(snapshot):
         'created_at': snapshot.created_at.isoformat(),
         'url': f'/api/analytics/sessions/{snapshot.session_id}/expression-snapshots/{snapshot.id}/image/',
     }
+
+
+def image_response(request, snapshot_id, allowed=True):
+    """
+    The stored JPEG, or None when there is no such photo. `allowed` is the caller's access check.
+
+    A photo never changes (a re-capture gets a new id), so the browser's copy stays valid: it asks
+    again on every view (a shared browser must not show someone else's cached photo) and, once
+    the photo is confirmed to still exist, gets a bodiless 304 instead of the image.
+    """
+    photos = ExpressionSnapshot.objects.filter(id=snapshot_id)
+    if not allowed or not photos.exists():
+        return None
+    etag = f'"expression-snapshot-{snapshot_id}"'
+    if request.headers.get('If-None-Match') == etag:
+        response = HttpResponse(status=304)
+    else:
+        image = photos.values_list('image', flat=True).first()
+        if image is None:
+            return None
+        response = HttpResponse(bytes(image), content_type='image/jpeg')
+    response['ETag'] = etag
+    response['Cache-Control'] = 'private, no-cache'
+    return response
 
 
 def new_photo_event(snapshot):

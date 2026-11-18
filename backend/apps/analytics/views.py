@@ -238,20 +238,5 @@ class ExpressionSnapshotImageView(InstructorSessionMixin, views.APIView):
 
     def get(self, request, session_id, snapshot_id):
         session = self.get_session(request, session_id)
-        photos = ExpressionSnapshot.objects.filter(id=snapshot_id, session_id=session_id) if session else None
-        if photos is None or not photos.exists():
-            return self.not_found()
-        # A photo never changes (a re-capture gets a new id), so the browser's copy stays valid: it
-        # asks again on every view (a shared browser must not show another instructor's cached
-        # photo) and, once the checks above pass, gets a bodiless 304 instead of the image.
-        etag = f'"expression-snapshot-{snapshot_id}"'
-        if request.headers.get('If-None-Match') == etag:
-            response = HttpResponse(status=status.HTTP_304_NOT_MODIFIED)
-        else:
-            image = photos.values_list('image', flat=True).first()
-            if image is None:
-                return self.not_found()
-            response = HttpResponse(bytes(image), content_type='image/jpeg')
-        response['ETag'] = etag
-        response['Cache-Control'] = 'private, no-cache'
-        return response
+        in_session = bool(session) and ExpressionSnapshot.objects.filter(id=snapshot_id, session_id=session_id).exists()
+        return snapshots.image_response(request, snapshot_id, allowed=in_session) or self.not_found()
